@@ -337,17 +337,13 @@
 
       if (action === 'delete') {
         if (!confirm('Excluir esta tarefa?')) return;
-        const { data, error } = await supabase
+        const { error } = await supabase
           .from('todos')
           .delete()
-          .eq('id', id)
-          .select('id');
+          .eq('id', id);
 
         if (error) {
           setText('add-msg', `Erro ao excluir: ${error.message}`, 'err');
-        } else if (!data || data.length === 0) {
-          // Nenhuma linha retornada: sem permissão ou ID inexistente
-          setText('add-msg', 'Não foi possível excluir (sem permissão ou já removida).', 'err');
         } else {
           setText('add-msg', 'Tarefa excluída.', 'ok');
           await carregar();

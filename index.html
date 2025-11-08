@@ -1,0 +1,460 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8">
+  <title>To-Do Supabase</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" href="data:,">
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #ffffff;
+      --fg: #111111;
+      --muted: #666666;
+      --border: #cccccc;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #1a1a1a;
+        --fg: #e5e5e5;
+        --muted: #a3a3a3;
+        --border: #404040;
+      }
+    }
+    body {
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      max-width: 760px;
+      margin: 2rem auto;
+      padding: 0 1rem;
+      background: var(--bg);
+      color: var(--fg);
+    }
+    h1 { margin-bottom: 0.5rem; }
+    .card {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1rem;
+      margin: 1rem 0;
+      background: var(--bg);
+    }
+    label { display: block; font-weight: 600; margin: 0.5rem 0 0.25rem; }
+    input {
+      width: 100%;
+      padding: 0.5rem;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--bg);
+      color: var(--fg);
+    }
+    button {
+      padding: 0.5rem 1rem;
+      border: 1px solid var(--fg);
+      background: var(--fg);
+      color: var(--bg);
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    button.ghost {
+      background: transparent;
+      color: var(--fg);
+      border: 1px solid var(--border);
+    }
+    button:disabled { opacity: 0.6; cursor: not-allowed; }
+    .row { display: flex; gap: 0.5rem; align-items: center; }
+    .muted { color: var(--muted); font-size: 0.9rem; }
+    ul { padding-left: 0; list-style: none; }
+    li {
+      margin: 0.5rem 0;
+      padding: 0.5rem;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    li.done {
+      text-decoration: line-through;
+      opacity: 0.6;
+    }
+    li input[type="checkbox"] {
+      width: auto;
+      margin: 0;
+    }
+    li input[type="text"] {
+      flex: 1;
+    }
+    li button {
+      padding: 0.25rem 0.5rem;
+      font-size: 0.85rem;
+    }
+    .timestamp {
+      margin-left: auto;
+    }
+    .ok { color: #059669; }
+    .err { color: #b91c1c; }
+    .space { height: 0.5rem; }
+  </style>
+</head>
+<body>
+  <h1>To-Do Supabase</h1>
+  <p class="muted">Leitura pública. Inserção exige login.</p>
+
+  <div class="card" id="auth">
+    <h2>Autenticação</h2>
+    <div class="row">
+      <div style="flex:1">
+        <label for="email">E-mail</label>
+        <input id="email" type="email" placeholder="seu@email.com" autocomplete="email">
+      </div>
+      <div style="flex:1">
+        <label for="password">Senha</label>
+        <input id="password" type="password" placeholder="mín. 6 caracteres" autocomplete="current-password">
+      </div>
+    </div>
+    <div class="space"></div>
+    <div class="row">
+      <button id="signup">Cadastrar</button>
+      <button id="signin" class="ghost">Entrar</button>
+      <button id="signout" class="ghost">Sair</button>
+      <button id="resend" class="ghost">Reenviar confirmação</button>
+    </div>
+    <div id="auth-msg" class="muted"></div>
+    <div id="session" class="muted"></div>
+  </div>
+
+  <div class="card">
+    <h2>Adicionar tarefa</h2>
+    <div class="row">
+      <input id="t" placeholder="Título da tarefa">
+      <button id="add">Adicionar</button>
+    </div>
+    <div id="add-msg" class="muted"></div>
+  </div>
+
+  <div class="card">
+    <h2>Lista</h2>
+    <ul id="list"></ul>
+  </div>
+
+  <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+  <script>
+    const SUPABASE_URL = "https://hqizjmmvmhlxcevrzenr.supabase.co";
+    const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhxaXpqbW12bWhseGNldnJ6ZW5yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjIwODM1OTgsImV4cCI6MjA3NzY1OTU5OH0.fxcBVGfTkQxuFb5LzZkYKGaqTIvvK2icq2Au-hTLMCI";
+
+    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: true
+      },
+      global: {
+        headers: { 'X-Client-Info': 'supabase-todo/1.1' }
+      }
+    });
+
+    const el = (id) => document.getElementById(id);
+    const setText = (id, text, cls) => {
+      const node = el(id);
+      node.textContent = text || '';
+      node.className = 'muted' + (cls ? ' ' + cls : '');
+    };
+    const disable = (node, v) => node && (node.disabled = !!v);
+    const escapeHtml = (str) => {
+      const div = document.createElement('div');
+      div.textContent = str;
+      return div.innerHTML;
+    };
+
+    async function carregar() {
+      const { data, error } = await supabase
+        .from('todos')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        setText('add-msg', `Erro ao carregar: ${error.message}`, 'err');
+        el('list').innerHTML = '';
+        return;
+      }
+
+      el('list').innerHTML = (data || [])
+        .map(i => {
+          const doneClass = i.is_complete ? ' class="done"' : '';
+          const checked = i.is_complete ? ' checked' : '';
+          const title = escapeHtml(i.title);
+          const timestamp = new Date(i.created_at).toLocaleString();
+          return `<li data-id="${i.id}"${doneClass}>
+            <input type="checkbox"${checked} aria-label="Toggle complete">
+            <span class="task-title">${title}</span>
+            <span class="muted timestamp">(${timestamp})</span>
+            <button class="ghost edit-btn">Editar</button>
+            <button class="ghost delete-btn">Excluir</button>
+          </li>`;
+        })
+        .join('');
+    }
+
+    let addPending = false;
+    async function adicionar() {
+      if (addPending) return;
+      addPending = true;
+      disable(el('add'), true);
+      try {
+        const title = el('t').value.trim();
+        if (!title) return;
+
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) {
+          setText('add-msg', 'Faça login para adicionar.', 'err');
+          return;
+        }
+
+        const { error } = await supabase.from('todos').insert({ title, is_complete: false });
+        if (error) {
+          setText('add-msg', `Erro ao inserir: ${error.message}`, 'err');
+        } else {
+          setText('add-msg', 'Tarefa adicionada.', 'ok');
+          el('t').value = '';
+          carregar();
+        }
+      } finally {
+        addPending = false;
+        disable(el('add'), false);
+      }
+    }
+
+    let authPending = false;
+
+    function normalizeAuthError(error) {
+      if (!error) return '';
+      const status = error.status || '';
+      const msg = (error.message || '').toLowerCase();
+      if (status === 429) return 'Muitas tentativas. Aguarde um pouco e tente novamente.';
+      if (status === 400 && msg.includes('email not confirmed')) return 'E-mail não confirmado. Verifique sua caixa de entrada ou use "Reenviar confirmação".';
+      if (status === 400 && msg.includes('invalid login credentials')) return 'Credenciais inválidas. Verifique e-mail e senha (mín. 6 caracteres).';
+      return `${error.message} (${status || 'erro'})`;
+    }
+
+    async function signUp() {
+      if (authPending) return;
+      const email = el('email').value.trim();
+      const password = el('password').value;
+      if (!email || !password) { setText('auth-msg', 'Informe e-mail e senha.', 'err'); return; }
+      if (password.length < 6) { setText('auth-msg', 'A senha deve ter pelo menos 6 caracteres.', 'err'); return; }
+      authPending = true; disable(el('signup'), true);
+      try {
+        const { error } = await supabase.auth.signUp({
+          email, password,
+          options: { emailRedirectTo: window.location.origin }
+        });
+        if (error) setText('auth-msg', normalizeAuthError(error), 'err');
+        else setText('auth-msg', 'Cadastro realizado. Se a confirmação de e-mail estiver ativa, verifique seu e-mail.', 'ok');
+      } finally { authPending = false; disable(el('signup'), false); }
+    }
+
+    async function signIn() {
+      if (authPending) return;
+      const email = el('email').value.trim();
+      const password = el('password').value;
+      if (!email || !password) { setText('auth-msg', 'Informe e-mail e senha.', 'err'); return; }
+      authPending = true; disable(el('signin'), true);
+      try {
+        const { error } = await supabase.auth.signInWithPassword({ email, password });
+        if (error) setText('auth-msg', normalizeAuthError(error), 'err');
+        else setText('auth-msg', 'Sessão iniciada.', 'ok');
+        renderSession(); carregar();
+      } finally { authPending = false; disable(el('signin'), false); }
+    }
+
+    async function resendConfirmation() {
+      const email = el('email').value.trim();
+      if (!email) { setText('auth-msg', 'Informe o e-mail para reenviar a confirmação.', 'err'); return; }
+      const { error } = await supabase.auth.resend({ type: 'signup', email });
+      if (error) setText('auth-msg', normalizeAuthError(error), 'err');
+      else setText('auth-msg', 'E-mail de confirmação reenviado (verifique caixa de entrada/spam).', 'ok');
+    }
+
+    async function signOut() {
+      if (authPending) return;
+      authPending = true; disable(el('signout'), true);
+      try {
+        const { error } = await supabase.auth.signOut();
+        if (error) setText('auth-msg', normalizeAuthError(error), 'err');
+        else setText('auth-msg', 'Sessão encerrada.', 'ok');
+        renderSession();
+      } finally { authPending = false; disable(el('signout'), false); }
+    }
+
+    async function renderSession() {
+      const { data: { session } } = await supabase.auth.getSession();
+      el('add').disabled = !session;
+      setText('session', session ? `Autenticado: ${session.user.email}` : 'Não autenticado');
+    }
+
+    // Event delegation for list actions
+    el('list').addEventListener('change', async (e) => {
+      if (e.target.type !== 'checkbox') return;
+      const li = e.target.closest('li');
+      const id = li?.dataset.id;
+      if (!id) return;
+
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        setText('add-msg', 'Faça login para editar.', 'err');
+        e.target.checked = !e.target.checked;
+        return;
+      }
+
+      const is_complete = e.target.checked;
+      const { error } = await supabase
+        .from('todos')
+        .update({ is_complete })
+        .eq('id', id);
+
+      if (error) {
+        setText('add-msg', `Erro ao atualizar: ${error.message}`, 'err');
+        e.target.checked = !e.target.checked;
+      } else {
+        li.classList.toggle('done', is_complete);
+        setText('add-msg', '', '');
+      }
+    });
+
+    el('list').addEventListener('click', async (e) => {
+      const button = e.target.closest('button[data-action]');
+      if (!button) return;
+
+      const li = button.closest('li');
+      const id = li?.dataset.id;
+      if (!id) return;
+
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        setText('add-msg', 'Faça login para editar.', 'err');
+        return;
+      }
+
+      const action = button.dataset.action;
+
+      if (action === 'delete') {
+        if (!confirm('Excluir esta tarefa?')) return;
+        const { error } = await supabase.from('todos').delete().eq('id', id);
+        if (error) {
+          setText('add-msg', `Erro ao excluir: ${error.message}`, 'err');
+        } else {
+          setText('add-msg', 'Tarefa excluída.', 'ok');
+          carregar();
+        }
+      } else if (action === 'edit') {
+        const titleSpan = li.querySelector('[data-title]');
+        const currentTitle = titleSpan.textContent;
+        const newTitle = prompt('Editar tarefa:', currentTitle);
+        if (!newTitle || newTitle === currentTitle) return;
+
+        const { error } = await supabase
+          .from('todos')
+          .update({ title: newTitle })
+          .eq('id', id);
+
+        if (error) {
+          setText('add-msg', `Erro ao editar: ${error.message}`, 'err');
+        } else {
+          setText('add-msg', 'Tarefa atualizada.', 'ok');
+          carregar();
+        }
+      }
+    });
+
+    // Eventos
+    el('add').onclick = adicionar;
+    el('t').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        adicionar();
+      }
+    });
+    el('signup').onclick = signUp;
+    el('signin').onclick = signIn;
+    el('signout').onclick = signOut;
+    el('resend').onclick = resendConfirmation;
+
+    // Event delegation for list actions
+    el('list').addEventListener('change', async (e) => {
+      if (e.target.type === 'checkbox') {
+        const li = e.target.closest('li');
+        const id = li.dataset.id;
+        const is_complete = e.target.checked;
+
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) {
+          setText('add-msg', 'Faça login para atualizar.', 'err');
+          e.target.checked = !is_complete;
+          return;
+        }
+
+        const { error } = await supabase.from('todos').update({ is_complete }).eq('id', id);
+        if (error) {
+          setText('add-msg', `Erro ao atualizar: ${error.message}`, 'err');
+          e.target.checked = !is_complete;
+        } else {
+          if (is_complete) {
+            li.classList.add('done');
+          } else {
+            li.classList.remove('done');
+          }
+          setText('add-msg', 'Tarefa atualizada.', 'ok');
+        }
+      }
+    });
+
+    el('list').addEventListener('click', async (e) => {
+      const li = e.target.closest('li');
+      if (!li) return;
+      const id = li.dataset.id;
+
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        setText('add-msg', 'Faça login para editar/excluir.', 'err');
+        return;
+      }
+
+      if (e.target.classList.contains('edit-btn')) {
+        const span = li.querySelector('.task-title');
+        const currentTitle = span.textContent;
+        const newTitle = prompt('Editar tarefa:', currentTitle);
+        if (newTitle && newTitle.trim() && newTitle.trim() !== currentTitle) {
+          const { error } = await supabase.from('todos').update({ title: newTitle.trim() }).eq('id', id);
+          if (error) {
+            setText('add-msg', `Erro ao editar: ${error.message}`, 'err');
+          } else {
+            setText('add-msg', 'Tarefa editada.', 'ok');
+            span.textContent = newTitle.trim();
+          }
+        }
+      } else if (e.target.classList.contains('delete-btn')) {
+        if (confirm('Tem certeza que deseja excluir esta tarefa?')) {
+          const { error } = await supabase.from('todos').delete().eq('id', id);
+          if (error) {
+            setText('add-msg', `Erro ao excluir: ${error.message}`, 'err');
+          } else {
+            setText('add-msg', 'Tarefa excluída.', 'ok');
+            li.remove();
+          }
+        }
+      }
+    });
+
+    // Enter key support for adding todos
+    el('t').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        adicionar();
+      }
+    });
+
+    // Atualiza UI em mudanças de auth
+    supabase.auth.onAuthStateChange((_event, _session) => { renderSession(); carregar(); });
+
+    // Inicial
+    renderSession(); carregar();
+  </script>
+</body>
+</html>

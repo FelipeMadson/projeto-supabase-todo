@@ -340,9 +340,7 @@
         const { error } = await supabase
           .from('todos')
           .delete()
-          .eq('id', id)
-          .select()
-          .single();
+          .eq('id', id);
 
         if (error) {
           setText('add-msg', `Erro ao excluir: ${error.message}`, 'err');

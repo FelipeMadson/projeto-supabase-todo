@@ -184,11 +184,11 @@
           const title = escapeHtml(i.title);
           const timestamp = new Date(i.created_at).toLocaleString();
           return `<li data-id="${i.id}"${doneClass}>
-            <input type="checkbox"${checked} aria-label="Toggle complete">
-            <span class="task-title">${title}</span>
+            <input type="checkbox"${checked} aria-label="Marcar tarefa como concluída">
+            <span class="task-title" data-title>${title}</span>
             <span class="muted timestamp">(${timestamp})</span>
-            <button class="ghost edit-btn">Editar</button>
-            <button class="ghost delete-btn">Excluir</button>
+            <button type="button" class="ghost edit-btn" data-action="edit">Editar</button>
+            <button type="button" class="ghost delete-btn" data-action="delete">Excluir</button>
           </li>`;
         })
         .join('');
@@ -291,7 +291,6 @@
       setText('session', session ? `Autenticado: ${session.user.email}` : 'Não autenticado');
     }
 
-    // Event delegation for list actions
     el('list').addEventListener('change', async (e) => {
       if (e.target.type !== 'checkbox') return;
       const li = e.target.closest('li');
@@ -330,7 +329,7 @@
 
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) {
-        setText('add-msg', 'Faça login para editar.', 'err');
+        setText('add-msg', 'Faça login para editar/excluir.', 'err');
         return;
       }
 
@@ -338,7 +337,13 @@
 
       if (action === 'delete') {
         if (!confirm('Excluir esta tarefa?')) return;
-        const { error } = await supabase.from('todos').delete().eq('id', id);
+        const { error } = await supabase
+          .from('todos')
+          .delete()
+          .eq('id', id)
+          .select()
+          .single();
+
         if (error) {
           setText('add-msg', `Erro ao excluir: ${error.message}`, 'err');
         } else {
@@ -347,8 +352,8 @@
         }
       } else if (action === 'edit') {
         const titleSpan = li.querySelector('[data-title]');
-        const currentTitle = titleSpan.textContent;
-        const newTitle = prompt('Editar tarefa:', currentTitle);
+        const currentTitle = titleSpan?.textContent || '';
+        const newTitle = prompt('Editar tarefa:', currentTitle)?.trim();
         if (!newTitle || newTitle === currentTitle) return;
 
         const { error } = await supabase
@@ -377,83 +382,8 @@
     el('signout').onclick = signOut;
     el('resend').onclick = resendConfirmation;
 
-    // Event delegation for list actions
-    el('list').addEventListener('change', async (e) => {
-      if (e.target.type === 'checkbox') {
-        const li = e.target.closest('li');
-        const id = li.dataset.id;
-        const is_complete = e.target.checked;
-
-        const { data: { session } } = await supabase.auth.getSession();
-        if (!session) {
-          setText('add-msg', 'Faça login para atualizar.', 'err');
-          e.target.checked = !is_complete;
-          return;
-        }
-
-        const { error } = await supabase.from('todos').update({ is_complete }).eq('id', id);
-        if (error) {
-          setText('add-msg', `Erro ao atualizar: ${error.message}`, 'err');
-          e.target.checked = !is_complete;
-        } else {
-          if (is_complete) {
-            li.classList.add('done');
-          } else {
-            li.classList.remove('done');
-          }
-          setText('add-msg', 'Tarefa atualizada.', 'ok');
-        }
-      }
-    });
-
-    el('list').addEventListener('click', async (e) => {
-      const li = e.target.closest('li');
-      if (!li) return;
-      const id = li.dataset.id;
-
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        setText('add-msg', 'Faça login para editar/excluir.', 'err');
-        return;
-      }
-
-      if (e.target.classList.contains('edit-btn')) {
-        const span = li.querySelector('.task-title');
-        const currentTitle = span.textContent;
-        const newTitle = prompt('Editar tarefa:', currentTitle);
-        if (newTitle && newTitle.trim() && newTitle.trim() !== currentTitle) {
-          const { error } = await supabase.from('todos').update({ title: newTitle.trim() }).eq('id', id);
-          if (error) {
-            setText('add-msg', `Erro ao editar: ${error.message}`, 'err');
-          } else {
-            setText('add-msg', 'Tarefa editada.', 'ok');
-            span.textContent = newTitle.trim();
-          }
-        }
-      } else if (e.target.classList.contains('delete-btn')) {
-        if (confirm('Tem certeza que deseja excluir esta tarefa?')) {
-          const { error } = await supabase.from('todos').delete().eq('id', id);
-          if (error) {
-            setText('add-msg', `Erro ao excluir: ${error.message}`, 'err');
-          } else {
-            setText('add-msg', 'Tarefa excluída.', 'ok');
-            li.remove();
-          }
-        }
-      }
-    });
-
-    // Enter key support for adding todos
-    el('t').addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
-        adicionar();
-      }
-    });
-
-    // Atualiza UI em mudanças de auth
     supabase.auth.onAuthStateChange((_event, _session) => { renderSession(); carregar(); });
 
-    // Inicial
     renderSession(); carregar();
   </script>
 </body>

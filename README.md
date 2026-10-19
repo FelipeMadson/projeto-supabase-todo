@@ -45,4 +45,4 @@ alter table todos enable row level security;
 
 ## License
 
-MIT © [Felipe Madson](https://github.com/FelipeMadson)
+MIT © [Felipe Madison](https://github.com/FelipeMadson)
